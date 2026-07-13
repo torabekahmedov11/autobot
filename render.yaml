@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: instagram-autobot
+    runtime: python
+    buildCommand: pip install -r requirements.txt && alembic upgrade head
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: instagram-autobot-db
+          property: connectionURI
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: IG_APP_ID
+        sync: false
+      - key: IG_APP_SECRET
+        sync: false
+      - key: IG_VERIFY_TOKEN
+        sync: false
+      - key: ENCRYPTION_KEY
+        sync: false
+      - key: LICENSE_MASTER_KEY
+        sync: false
+    healthCheckPath: /health
+
+databases:
+  - name: instagram-autobot-db
+    plan: free
+    databaseName: instagram_autobot
