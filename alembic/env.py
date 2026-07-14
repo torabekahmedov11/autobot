@@ -1,7 +1,11 @@
 """Alembic env.py — async migratsiya konfiguratsiyasi."""
 
 import asyncio
+import os
+import sys
 from logging.config import fileConfig
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from alembic import context
 from sqlalchemy import pool
