@@ -1,5 +1,6 @@
 """Loyiha sozlamalari — barcha env o'zgaruvchilar shu yerda."""
 
+from typing import Optional
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 
@@ -14,12 +15,14 @@ class Settings(BaseSettings):
     # Instagram
     IG_APP_ID: str
     IG_APP_SECRET: str
-    WEBHOOK_VERIFY_TOKEN: str
-    IG_BUSINESS_ACCOUNT_ID: str
-    IG_ACCESS_TOKEN: str
+    IG_VERIFY_TOKEN: Optional[str] = None
+    WEBHOOK_VERIFY_TOKEN: Optional[str] = None
+    IG_BUSINESS_ACCOUNT_ID: Optional[str] = None
+    IG_ACCESS_TOKEN: Optional[str] = None
 
     # Encryption
-    FERNET_KEY: str
+    ENCRYPTION_KEY: Optional[str] = None
+    FERNET_KEY: Optional[str] = None
 
     # License
     LICENSE_MASTER_KEY: str = "your_master_key_here"
