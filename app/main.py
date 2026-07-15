@@ -91,14 +91,12 @@ async def lifespan(app: FastAPI):
     """Dastur ishga tushganda va to'xtalganda."""
     settings = get_settings()
 
-    # Muhim env o'zgaruvchilarni tekshirish — yo'q bo'lsa aniq xato bilan to'xtatish
+    # Faqat eng muhim o'zgaruvchilarni tekshirish
     required_vars = {
         "DATABASE_URL": settings.DATABASE_URL,
         "TELEGRAM_BOT_TOKEN": settings.TELEGRAM_BOT_TOKEN,
         "IG_APP_ID": settings.IG_APP_ID,
         "IG_APP_SECRET": settings.IG_APP_SECRET,
-        "IG_VERIFY_TOKEN": settings.IG_VERIFY_TOKEN,
-        "ENCRYPTION_KEY": settings.ENCRYPTION_KEY,
     }
     for var_name, var_value in required_vars.items():
         if not var_value:
@@ -106,6 +104,11 @@ async def lifespan(app: FastAPI):
                 f"❌ MUHIM: {var_name} environment o'zgaruvchisi topilmadi! "
                 f".env faylingizni tekshiring."
             )
+    # Ixtiyoriy o'zgaruvchilar tekshiruvi (xato chiqarmaydi)
+    if not settings.IG_VERIFY_TOKEN:
+        logger.warning("⚠️  IG_VERIFY_TOKEN belgilanmagan — webhook verify ishlamaydi.")
+    if not settings.ENCRYPTION_KEY:
+        logger.warning("⚠️  ENCRYPTION_KEY belgilanmagan — token shifrlash ishlamaydi.")
 
     logger.info("🚀 Instagram Auto-DM Bot ishga tushmoqda...")
 
