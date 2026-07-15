@@ -22,7 +22,7 @@ from app.models import (
 from app.services.instagram_api import (
     send_dm_image,
     send_dm_text,
-    send_dm_with_button,
+    send_private_reply,
 )
 from app.utils.logger import logger
 
@@ -94,11 +94,11 @@ async def handle_instagram_webhook(
                 if change.get("field") == "comments":
                     await _handle_comment(change["value"], db, settings)
 
-        # ── MESSAGING webhook (tugma bosilganda) ──
+        # ── MESSAGING webhook (matn yozilganda) ──
         if "messaging" in entry:
             for msg_event in entry["messaging"]:
-                if "quick_reply" in msg_event.get("message", {}):
-                    await _handle_quick_reply(msg_event, db)
+                if "message" in msg_event and not msg_event["message"].get("is_echo"):
+                    await _handle_incoming_message(msg_event, db)
 
     return Response(content="OK", status_code=200)
 
@@ -108,7 +108,9 @@ async def _handle_comment(
     value: dict, db: AsyncSession, settings
 ) -> None:
     """Yangi izohni qayta ishlash — 2-6 qadamlar."""
-    ig_media_id = value.get("media_id", "")
+    ig_media_id = value.get("media", {}).get("id", "")
+    if not ig_media_id:
+        ig_media_id = value.get("media_id", "")
     comment_id = value.get("id", "")
     comment_text = value.get("text", "")
     commenter_id = value.get("from", {}).get("id", "")
@@ -155,21 +157,16 @@ async def _handle_comment(
     if existing.scalar_one_or_none():
         return  # Avval javob olgan — takroriy yubormaymiz
 
-    # 6-QADAM: "Obuna bo'ldim" tugmali DM yuborish
-    # BU HAQIQIY OBUNA TEKSHIRUVI EMAS — soft-check, foydalanuvchi
-    # ongli ravishda tugma bosadigan jarayon.
+    # 6-QADAM: Obuna matnli shaxsiy xabar yuborish (Private Reply)
     subscribe_message = (
-        "Materialni ko'rish uchun avval obuna bo'ling, "
-        "keyin pastdagi tugmani bosing"
+        "Qiziqarli materialni (javobni) ko'rish uchun avval sahifamizga obuna bo'ling! ✅\n\n"
+        "Obuna bo'lganingizdan so'ng, ushbu xabarga «Obuna bo'ldim» yoki «+» deb yozib javob qaytaring. Shundan so'ng sizga materiallar avtomatik yuboriladi."
     )
-    button_payload = f"confirm_{tracked_post.id}_{commenter_id}"
 
     try:
-        result = await send_dm_with_button(
+        result = await send_private_reply(
             ig_comment_id=comment_id,
             message_text=subscribe_message,
-            button_title="✅ Obuna bo'ldim",
-            button_payload=button_payload,
             access_token_encrypted=business.ig_access_token,
         )
 
@@ -212,48 +209,39 @@ async def _handle_comment(
         )
 
 
-# ─── TUGMA BOSILGANDA (QUICK REPLY CALLBACK) ─────────────────
-async def _handle_quick_reply(msg_event: dict, db: AsyncSession) -> None:
+# ─── XABAR KELGANDA (INCOMING MESSAGE) ───────────────────────
+async def _handle_incoming_message(msg_event: dict, db: AsyncSession) -> None:
     """
-    7-QADAM: Foydalanuvchi "Obuna bo'ldim" tugmasini bosdi.
+    7-QADAM: Foydalanuvchi Private Reply ga javob yozdi (tasdiqladi).
     - confirmed_at yangilanadi
     - post_responses kontentlari DM orqali yuboriladi
     - final_reply_sent_at yangilanadi
     """
     sender_id = msg_event.get("sender", {}).get("id", "")
-    payload = msg_event.get("message", {}).get("quick_reply", {}).get("payload", "")
+    message_text = msg_event.get("message", {}).get("text", "")
 
-    if not payload.startswith("confirm_"):
+    if not sender_id or not message_text:
         return
 
-    parts = payload.split("_", 2)
-    if len(parts) != 3:
-        return
-
-    _, tracked_post_id_str, commenter_id = parts
-
-    try:
-        tracked_post_id = int(tracked_post_id_str)
-    except ValueError:
-        return
-
-    # reply_log ni topish
-    log_stmt = select(ReplyLog).where(
-        ReplyLog.tracked_post_id == tracked_post_id,
-        ReplyLog.ig_commenter_id == commenter_id,
+    # Kutilayotgan (javob yuborilmagan) reply_log larni topish
+    log_stmt = (
+        select(ReplyLog)
+        .where(
+            ReplyLog.ig_commenter_id == sender_id,
+            ReplyLog.final_reply_sent_at.is_(None)
+        )
+        .order_by(ReplyLog.id.desc())
     )
     result = await db.execute(log_stmt)
-    reply_log = result.scalar_one_or_none()
+    pending_logs = result.scalars().all()
 
-    if not reply_log:
+    if not pending_logs:
         return
 
-    # Agar allaqachon javob yuborilgan bo'lsa — qayta yubormaymiz
-    if reply_log.final_reply_sent_at:
-        return
-
-    # confirmed_at ni yangilash
-    reply_log.confirmed_at = datetime.now(timezone.utc)
+    for reply_log in pending_logs:
+        # confirmed_at ni yangilash
+        reply_log.confirmed_at = datetime.now(timezone.utc)
+        tracked_post_id = reply_log.tracked_post_id
 
     # tracked_post va business ma'lumotlarini olish
     post_stmt = (
@@ -313,12 +301,11 @@ async def _handle_quick_reply(msg_event: dict, db: AsyncSession) -> None:
                 resp.content_type,
             )
 
-    if all_sent:
+    for reply_log in pending_logs:
         reply_log.final_reply_sent_at = datetime.now(timezone.utc)
         logger.info(
-            "Barcha javoblar yuborildi: post=%s, user=%s",
-            tracked_post_id,
-            commenter_id,
+            "Barcha javoblar yuborildi: user=%s",
+            sender_id,
         )
 
     await db.commit()

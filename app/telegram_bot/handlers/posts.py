@@ -42,14 +42,43 @@ async def _get_active_business(
     return result.scalar_one_or_none()
 
 
-def _extract_media_id_from_url(url: str) -> str | None:
-    """
-    Post URL dan media ID (qisqa kod) olish uchun oddiy yondashuv.
-    """
+def _extract_shortcode_from_url(url: str) -> str | None:
+    """Post URL dan shortcode olish."""
     match = re.search(r"instagram\.com\/(?:p|reel|tv)\/([A-Za-z0-9_\-]+)", url)
     if match:
         return match.group(1)
     return url.strip()
+
+
+async def _resolve_media_id(shortcode: str, access_token: str) -> str | None:
+    """
+    Shortcode'ni haqiqiy raqamli ig_media_id ga aylantirish.
+    Instagram Graph API: GET /{ig-user-id}/media?fields=id,shortcode
+    yoki oEmbed endpoint orqali.
+    """
+    import httpx
+    try:
+        # oEmbed orqali media_id olish
+        url = f"https://graph.facebook.com/v21.0/instagram_oembed"
+        params = {
+            "url": f"https://www.instagram.com/p/{shortcode}/",
+            "access_token": access_token,
+            "fields": "media_id",
+        }
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(url, params=params)
+            if resp.status_code == 200:
+                data = resp.json()
+                media_id = data.get("media_id")
+                if media_id:
+                    logger.info("Shortcode %s -> media_id %s", shortcode, media_id)
+                    return media_id
+    except Exception as e:
+        logger.warning("oEmbed media_id olishda xato: %s", str(e))
+
+    # Fallback: shortcode ni qaytarish
+    logger.warning("Media ID olishda fallback: shortcode=%s saqlanmoqda", shortcode)
+    return shortcode
 
 
 # ─── POST QO'SHISH BOSHLASH ──────────────────────────────────
@@ -63,7 +92,10 @@ async def start_add_post(callback: CallbackQuery, state: FSMContext):
         await callback.answer("⛔ Avval Instagram akkauntingizni ulang!", show_alert=True)
         return
 
-    await state.update_data(business_id=business.id)
+    await state.update_data(
+        business_id=business.id,
+        access_token=business.ig_access_token,
+    )
     await state.set_state(AddPostStates.waiting_for_post_url)
 
     await callback.message.edit_text(
@@ -88,7 +120,24 @@ async def receive_post_url(message: Message, state: FSMContext):
         )
         return
 
-    media_id = _extract_media_id_from_url(url)
+    await message.answer("⏳ Post tekshirilmoqda...")
+
+    shortcode = _extract_shortcode_from_url(url)
+
+    # Access token bilan media_id ni olishga urinish
+    data = await state.get_data()
+    access_token = data.get("access_token", "")
+
+    if access_token:
+        try:
+            from app.services.crypto import decrypt_token
+            token = decrypt_token(access_token)
+            media_id = await _resolve_media_id(shortcode, token)
+        except Exception:
+            media_id = shortcode
+    else:
+        media_id = shortcode
+
     await state.update_data(post_url=url, ig_media_id=media_id)
     await state.set_state(AddPostStates.waiting_for_keyword)
 
