@@ -137,8 +137,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+from app.webhooks.auth import router as auth_router
+
 # Router'larni ulash
 app.include_router(webhook_router)
+app.include_router(auth_router)
 
 
 # ─── HEALTH CHECK ─────────────────────────────────────────────
