@@ -71,11 +71,13 @@ async def cmd_start(message: Message):
         return
 
     settings = get_settings()
+    base_url = getattr(settings, "RENDER_URL", "https://autobot-yqnm.onrender.com")
+    callback_url = f"{base_url}/auth/callback"
     # Facebook OAuth link — bu brauzer orqali ochiladi
     oauth_url = (
         f"https://www.facebook.com/v21.0/dialog/oauth?"
         f"client_id={settings.IG_APP_ID}"
-        f"&redirect_uri=https://yourdomain.com/auth/callback"
+        f"&redirect_uri={callback_url}"
         f"&scope=instagram_basic,instagram_manage_comments,"
         f"instagram_manage_messages,pages_manage_metadata,"
         f"pages_show_list"

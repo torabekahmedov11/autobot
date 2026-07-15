@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     # License
     LICENSE_MASTER_KEY: str = "your_master_key_here"
 
+    # App public URL (Render yoki boshqa hosting)
+    RENDER_URL: Optional[str] = "https://autobot-yqnm.onrender.com"
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 
