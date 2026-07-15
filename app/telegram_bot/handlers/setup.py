@@ -78,9 +78,7 @@ async def cmd_start(message: Message):
         f"https://www.facebook.com/v21.0/dialog/oauth?"
         f"client_id={settings.IG_APP_ID}"
         f"&redirect_uri={callback_url}"
-        f"&scope=instagram_basic,instagram_manage_comments,"
-        f"instagram_manage_messages,pages_manage_metadata,"
-        f"pages_show_list"
+        f"&scope=instagram_basic,instagram_manage_comments,instagram_manage_messages,pages_show_list,pages_read_engagement"
         f"&state={message.from_user.id}"
     )
 
